@@ -1,20 +1,32 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const apiRouter = require('./src/routes/api');
-const archiveJob = require('./src/cron/archiveJob');
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const apiRouter = require("./src/routes/api");
+const archiveJob = require("./src/cron/archiveJob");
 
 const app = express();
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
-app.use(cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true,
-}));
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
+  "http://localhost:3000",
+];
+app.use(
+  cors({
+    origin: (incomingOrigin, callback) => {
+      if (!incomingOrigin) return callback(null, true);
+
+      const cleaned = allowedOrigins.map((o) => o.replace(/\/$/, ""));
+      if (cleaned.includes(incomingOrigin)) {
+        return callback(null, true);
+      }
+      callback(new Error(`CORS policy violation: ${incomingOrigin}`));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  })
+);
 
 app.use(express.json());
-app.use('/api', apiRouter);
+app.use("/api", apiRouter);
 
 archiveJob.start();
 
