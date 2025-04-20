@@ -1,0 +1,57 @@
+# dotenv environment variables file
+.env
+
+# Node.js dependencies
+node_modules/
+
+# yarn.lock
+# pnpm-lock.yaml
+
+# Log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime files
+*.pid
+*.seed
+*.pid.lock
+
+# Directory for compiled output
+dist/
+build/
+.parcel-cache/
+
+# Editor directories and files
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.vssscc
+.history/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Optional: if you have test coverage reports
+coverage/
+
+# Optional: if you have a a public build folder (common for some frontend builds within a backend project)
+# public/build/
+
+# Optional: if you are using pm2
+pids/
+logs/
+verbose.log
+
+# Optional: macOS specific files
+.DS_Store
+
+# Optional: Windows specific files
+Thumbs.db
