@@ -4,5 +4,6 @@ const cache = new NodeCache({ stdTTL: ttl });
 
 module.exports = {
   get: (k) => cache.get(k),
-  set: (k, v) => cache.set(k, v)
+  set: (k, v) => cache.set(k, v),
+  getAll: () => cache.mget(cache.keys())
 };

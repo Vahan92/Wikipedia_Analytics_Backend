@@ -1,10 +1,10 @@
 require('dotenv').config();
 const app = require('./app');
-const archiveJob = require('./cron/archiveJob');
+const { scheduleCacheArchiving } = require('./cron/archiveCron');
 
 const PORT = process.env.PORT || 4060;
 
-archiveJob.start();
+scheduleCacheArchiving();
 
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
