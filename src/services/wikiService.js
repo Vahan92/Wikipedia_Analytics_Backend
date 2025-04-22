@@ -2,190 +2,109 @@ const axios = require("axios");
 const cache = require("./cacheService");
 const { getDateRanges } = require("../utils/dateUtils");
 
-const CONFIG = {
-  BASE_URL: "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
-  PROJECT: process.env.WIKI_PROJECT || "en.wikipedia.org",
-  ACCESS: process.env.WIKI_ACCESS || "all-access",
-  AGENT: process.env.WIKI_AGENT || "user",
-  DEFAULT_PAGE: "Main_Page",
-  REQUEST_TIMEOUT: 10000,
-  RETRY_ATTEMPTS: 3,
-  RETRY_DELAY: 1000,
-};
+const BASE_URL =
+  "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article";
+const PROJECT = process.env.WIKI_PROJECT;
+const ACCESS = process.env.WIKI_ACCESS;
+const AGENT = process.env.WIKI_AGENT;
 
-const apiClient = axios.create({
-  timeout: CONFIG.REQUEST_TIMEOUT,
-  headers: {
-    "User-Agent":
-      "PageviewsClient/1.0 (vahan.kalenteryan.dev@gmail.com)",
-  },
-});
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function formatDateString(timestamp, format) {
-  const year = timestamp.substring(0, 4);
-  const month = timestamp.substring(4, 6);
-  const day = timestamp.substring(6, 8);
-
-  switch (format) {
-    case "daily":
-      return `${year}-${month}-${day}`;
-    case "weekly":
-      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      const startOfYear = new Date(date.getFullYear(), 0, 0);
-      const diff = date - startOfYear;
-      const dayOfYear = Math.floor(diff / (24 * 60 * 60 * 1000));
-      const weekNumber = Math.floor(dayOfYear / 7) + 1;
-      return `${year}-W${weekNumber.toString().padStart(2, "0")}`;
-    case "monthly":
-      return `${year}/${month}`;
-    default:
-      return `${year}-${month}-${day}`;
-  }
-}
-
-async function fetchDailyData(
-  start,
-  end,
-  page = CONFIG.DEFAULT_PAGE,
-  retryCount = CONFIG.RETRY_ATTEMPTS
-) {
-  const key = `views:${page}:${start}:${end}`;
+async function fetchDailyData(start, end) {
+  const key = `views:${start}:${end}`;
   const cached = cache.get(key);
+  if (cached) return cached;
 
-  if (cached) {
-    return cached;
-  }
-
-  const url = `${CONFIG.BASE_URL}/${CONFIG.PROJECT}/${CONFIG.ACCESS}/${
-    CONFIG.AGENT
-  }/${encodeURIComponent(page)}/daily/${start}/${end}`;
-
-  try {
-    const resp = await apiClient.get(url);
-
-    if (!resp.data || !resp.data.items) {
-      throw new Error("Invalid API response format");
-    }
-
-    const items = resp.data.items.map((i) => ({
-      timestamp: i.timestamp,
-      views: i.views,
-    }));
-
-    cache.set(key, items);
-    return items;
-  } catch (error) {
-    if (
-      retryCount > 0 &&
-      (error.code === "ECONNABORTED" || error.response?.status >= 500)
-    ) {
-      console.warn(
-        `API request failed, retrying (${retryCount} attempts left): ${error.message}`
-      );
-      await delay(
-        CONFIG.RETRY_DELAY * (CONFIG.RETRY_ATTEMPTS - retryCount + 1)
-      );
-      return fetchDailyData(start, end, page, retryCount - 1);
-    }
-
-    console.error(`Failed to fetch pageviews data: ${error.message}`);
-    throw new Error(`Failed to fetch pageviews data: ${error.message}`);
-  }
+  const url = `${BASE_URL}/${PROJECT}/${ACCESS}/${AGENT}/${encodeURIComponent(
+    "Main_Page"
+  )}/daily/${start}/${end}`;
+  const resp = await axios.get(url);
+  const items = resp.data.items.map((i) => ({
+    timestamp: i.timestamp,
+    views: i.views,
+  }));
+  cache.set(key, items);
+  return items;
 }
 
-function groupDataByPeriod(data, periodType) {
-  if (periodType === "daily") {
-    return data.map((item) => ({
-      date: formatDateString(item.timestamp, "daily"),
-      views: item.views,
-    }));
-  }
-
-  const periods = {};
-
+function groupByWeek(data) {
+  const weeks = {};
   data.forEach((item) => {
-    const periodKey = formatDateString(item.timestamp, periodType);
+    const date = new Date(
+      parseInt(item.timestamp.slice(0, 4)),
+      parseInt(item.timestamp.slice(4, 6)) - 1,
+      parseInt(item.timestamp.slice(6, 8))
+    );
+    const startOfYear = new Date(date.getFullYear(), 0, 0);
+    const diff = date - startOfYear;
+    const dayOfYear = Math.floor(diff / (24 * 60 * 60 * 1000));
+    const weekNumber = Math.floor(dayOfYear / 7) + 1;
+    const weekKey = `${date.getFullYear()}-W${weekNumber
+      .toString()
+      .padStart(2, "0")}`;
 
-    if (!periods[periodKey]) {
-      periods[periodKey] = { date: periodKey, views: 0, count: 0 };
-    }
-
-    periods[periodKey].views += item.views;
-    periods[periodKey].count += 1;
+    if (!weeks[weekKey]) weeks[weekKey] = { date: weekKey, views: 0, count: 0 };
+    weeks[weekKey].views += item.views;
+    weeks[weekKey].count += 1;
   });
 
-  return Object.values(periods).map((period) => ({
-    date: period.date,
-    views: Math.round(period.views / period.count),
+  return Object.values(weeks).map((w) => ({
+    date: w.date,
+    views: Math.round(w.views / w.count),
   }));
 }
 
-async function fetchPageviews(periodDays, page = CONFIG.DEFAULT_PAGE) {
-  let periodType;
-  switch (periodDays) {
-    case 30:
-      periodType = "daily";
-      break;
-    case 90:
-      periodType = "weekly";
-      break;
-    case 365:
-    default:
-      periodType = "monthly";
-      break;
-  }
+function groupByMonth(data) {
+  const months = {};
+  data.forEach((item) => {
+    const yearMonth = `${item.timestamp.slice(0, 4)}/${item.timestamp.slice(
+      4,
+      6
+    )}`;
+    if (!months[yearMonth])
+      months[yearMonth] = { date: yearMonth, views: 0, count: 0 };
+    months[yearMonth].views += item.views;
+    months[yearMonth].count += 1;
+  });
 
-  const { current, previous } = getDateRanges(periodDays);
-  console.info(
-    `Fetching ${periodType} data for page "${page}" (${periodDays} days)`
-  );
+  return Object.values(months).map((m) => ({
+    date: m.date,
+    views: Math.round(m.views / m.count),
+  }));
+}
 
-  try {
-    const [currentRawData, previousRawData] = await Promise.all([
-      fetchDailyData(current.start, current.end, page),
-      fetchDailyData(previous.start, previous.end, page),
-    ]);
+function convertDailyData(data) {
+  return data.map((item) => {
+    const year = item.timestamp.substring(0, 4);
+    const month = item.timestamp.substring(4, 6);
+    const day = item.timestamp.substring(6, 8);
 
-    const currentProcessed = groupDataByPeriod(currentRawData, periodType);
-    const previousProcessed = groupDataByPeriod(previousRawData, periodType);
+    const dateString = `${year}-${month}-${day}`;
 
     return {
-      current: currentProcessed,
-      previous: previousProcessed,
-      periodType,
+      date: dateString,
+      views: item.views,
     };
-  } catch (error) {
-    console.error(`Error fetching pageviews: ${error.message}`);
-    throw error;
+  });
+}
+
+exports.fetchPageviews = async (periodDays) => {
+  const { current, previous } = getDateRanges(periodDays);
+  console.info("current .... ", current);
+  const [currRaw, prevRaw] = await Promise.all([
+    fetchDailyData(current.start, current.end),
+    fetchDailyData(previous.start, previous.end),
+  ]);
+
+  let currProcessed, prevProcessed;
+  if (periodDays === 30) {
+    currProcessed = convertDailyData(currRaw);
+    prevProcessed = convertDailyData(prevRaw);
+  } else if (periodDays === 90) {
+    currProcessed = groupByWeek(currRaw);
+    prevProcessed = groupByWeek(prevRaw);
+  } else if (periodDays === 365) {
+    currProcessed = groupByMonth(currRaw);
+    prevProcessed = groupByMonth(prevRaw);
   }
-}
 
-async function fetchPageviewsMultiple(periodDays, pages) {
-  const results = {};
-
-  const promises = pages.map((page) =>
-    fetchPageviews(periodDays, page)
-      .then((data) => {
-        results[page] = data;
-        return { page, status: "fulfilled" };
-      })
-      .catch((error) => {
-        console.error(
-          `Failed to fetch data for page "${page}": ${error.message}`
-        );
-        return { page, status: "rejected", error: error.message };
-      })
-  );
-
-  await Promise.allSettled(promises);
-  return results;
-}
-
-module.exports = {
-  fetchPageviews,
-  fetchPageviewsMultiple,
-  fetchDailyData,
-  groupDataByPeriod,
+  return { current: currProcessed, previous: prevProcessed };
 };
