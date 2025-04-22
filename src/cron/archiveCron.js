@@ -4,7 +4,7 @@ const { archiveCacheData } = require('../services/archiveService');
 function scheduleCacheArchiving() {
   console.log('Setting up daily cache archiving job');
   
-  cron.schedule('0 0 * * *', async () => {
+  cron.schedule(`${process.env.CRON_SCHEDULE}`, async () => {
     console.log(`Starting scheduled cache archiving job at ${new Date()}`);
     try {
       const results = await archiveCacheData();
